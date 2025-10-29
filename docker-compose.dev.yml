@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # Neon Local Proxy for Development
+  neon-local:
+    image: neondatabase/neon-proxy:latest
+    container_name: neon-local
+    environment:
+      # Neon Local configuration
+      APPEND_PORT: "proxy:5432"
+    ports:
+      - "5432:5432"
+    volumes:
+      - neon-local-data:/var/lib/neon
+    networks:
+      - acquisitions-network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Application Service (Development)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: acquisitions-app-dev
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - LOG_LEVEL=debug
+      - DATABASE_URL=postgres://postgres:postgres@neon-local:5432/main
+      - ARCJET_KEY=${ARCJET_KEY}
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount source code for hot reload
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+      - ./drizzle:/app/drizzle
+      - ./drizzle.config.js:/app/drizzle.config.js
+      # Prevent node_modules from being overwritten
+      - /app/node_modules
+    networks:
+      - acquisitions-network
+    depends_on:
+      neon-local:
+        condition: service_healthy
+    restart: unless-stopped
+    command: npm run dev
+
+networks:
+  acquisitions-network:
+    driver: bridge
+
+volumes:
+  neon-local-data:
+    driver: local
